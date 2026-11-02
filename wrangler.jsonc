@@ -9,34 +9,33 @@
   "compatibility_date": "2026-10-18",
   "keep_vars": true,
 
-  // D1 数据库。${...} 只是占位符，wrangler 不会展开：
-  // 部署前由 scripts/configure.mjs 渲染成 wrangler.deploy.jsonc（已被 .gitignore 忽略）
+  // D1 数据库（本实例的实际值，因此 `wrangler deploy` 可直接部署；
+  // 走 `pnpm run deploy` 时 scripts/configure.mjs 会按 .env 重新渲染 wrangler.deploy.jsonc）
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "${D1_DATABASE_NAME}",
-      "database_id": "${D1_DATABASE_ID}",
+      "database_name": "tempmail-data",
+      "database_id": "31ecf85e-07a0-4f24-97f9-8fe3c6ab5d51",
       "migrations_dir": "worker/drizzle"
     }
   ],
 
-  // 普通变量。密钥不要写在这里，走 wrangler secret（configure.mjs 会从环境变量上传）
+  // 普通变量。密钥不写在这里：TURNSTILE_SECRET / MAILBOX_TOKEN_SECRET / RESEND_API_KEY /
+  // GITHUB_CLIENT_SECRET / BETTER_AUTH_SECRET / API_KEY_SECRET 一律用 wrangler secret 管理
   "vars": {
-    "PASSWORD": "${PASSWORD}",
-    "COOKIES_SECRET": "${COOKIES_SECRET}",
-    "EMAIL_DOMAIN": "${EMAIL_DOMAIN}",
-    "SEND_CHANNEL": "${SEND_CHANNEL}",
-    "SENDER_EMAIL": "${SENDER_EMAIL}",
+    "PASSWORD": "",
+    "EMAIL_DOMAIN": "524228.xyz",
+    "SEND_CHANNEL": "resend",
+    "SENDER_EMAIL": "noreply@emails.524228.xyz",
     "SEND_USER_DAILY_LIMIT": "10",
     "SEND_GLOBAL_DAILY_LIMIT": "100",
-    "SEND_RATE_LIMIT_PER_MINUTE": "${SEND_RATE_LIMIT_PER_MINUTE}",
-    "SEND_IP_RATE_LIMIT_PER_MINUTE": "${SEND_IP_RATE_LIMIT_PER_MINUTE}",
-    "TURNSTILE_KEY": "${TURNSTILE_KEY}",
-    "TURNSTILE_SECRET": "${TURNSTILE_SECRET}",
-    "API_RATE_LIMIT_PER_MINUTE": "${API_RATE_LIMIT_PER_MINUTE}",
-    "SHOW_AFF": "${SHOW_AFF}",
+    "SEND_RATE_LIMIT_PER_MINUTE": "3",
+    "SEND_IP_RATE_LIMIT_PER_MINUTE": "10",
+    "TURNSTILE_KEY": "0x4AAAAAAA3GOUwP4K5-UT6j",
+    "API_RATE_LIMIT_PER_MINUTE": "30",
+    "SHOW_AFF": "false",
     "ENABLE_OPENAPI": "false",
-    "BETTER_AUTH_URL": "",
+    "BETTER_AUTH_URL": "https://mailer.524228.xyz",
     "API_DAILY_LIMIT": "1000",
     "MAILBOX_DAILY_LIMIT": "20",
     "MAX_ACTIVE_MAILBOXES": "20",

@@ -58,7 +58,7 @@ Disposable inboxes · Send & receive · Open API · No server required
    ```
 
 4. In the Cloudflare dashboard, enable **Email Routing → Catch-all → Send to a Worker** for the mailbox domain and point it at this Worker.
-   If automatic binding did not apply (for example `wrangler.jsonc` still holds placeholders), follow [Manual deployment](#-self-hosted-tutorial), fill in the D1 ID and run `pnpm deploy`.
+   If the Worker is bound to the wrong D1 database, edit `d1_databases` in `wrangler.jsonc` and run `pnpm deploy` (or `wrangler deploy` directly).
 
 ### ② Tencent EdgeOne Pages (static frontend)
 
@@ -180,7 +180,7 @@ For detailed steps, please refer to the [GitHub Action Auto-Deployment Tutorial]
    pnpm deploy
    ```
 
-   The script validates, tests, typechecks, builds, applies D1 migrations and deploys Worker assets and Durable Objects. Keep the source `wrangler.jsonc` placeholders; the script generates the ignored, secret-free `wrangler.deploy.jsonc` and uploads secrets separately. Cloudflare Pages variables do not configure this Workers project.
+   The script validates, tests, typechecks, builds, applies D1 migrations and deploys Worker assets and Durable Objects. `wrangler.jsonc` already holds this instance values, so `wrangler deploy` works directly; the script additionally renders an ignored, secret-free `wrangler.deploy.jsonc` and uploads secrets separately. Cloudflare Pages variables do not configure this Workers project.
 
 4. Match the site custom domain to `BETTER_AUTH_URL`. Enable Email Routing on mailbox domains and set Catch-all → Send to a Worker to this Worker; complete DNS setup.
 
