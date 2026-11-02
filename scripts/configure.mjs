@@ -132,12 +132,12 @@ if (
 }
 config = config
   .replace(
-    /database_name = .*\n/,
-    "database_name = " + JSON.stringify(env.D1_DATABASE_NAME) + "\n",
+    /database_name = [^\r\n]*/,
+    "database_name = " + JSON.stringify(env.D1_DATABASE_NAME),
   )
   .replace(
-    /database_id = .*\n/,
-    "database_id = " + JSON.stringify(env.D1_DATABASE_ID) + "\n",
+    /database_id = [^\r\n]*/,
+    "database_id = " + JSON.stringify(env.D1_DATABASE_ID),
   );
 config = config.replace(
   /\[vars\][\s\S]*?(?=\n\[)/,

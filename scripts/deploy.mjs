@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 if (fs.existsSync(".env")) process.loadEnvFile(".env");
+const isWindows = process.platform === "win32";
+const pnpm = isWindows ? "pnpm.cmd" : "pnpm";
 const env = {
   ...process.env,
   CLOUDFLARE_API_TOKEN:
@@ -14,6 +16,7 @@ function run(args, options = {}) {
   const result = spawnSync(args[0], args.slice(1), {
     stdio: "inherit",
     env,
+    shell: isWindows,
     ...options,
   });
   if (result.status !== 0)
@@ -21,11 +24,11 @@ function run(args, options = {}) {
   return result;
 }
 run(["node", "scripts/configure.mjs"]);
-run(["pnpm", "test"]);
-run(["pnpm", "typecheck"]);
-run(["pnpm", "build"]);
+run([pnpm, "test"]);
+run([pnpm, "typecheck"]);
+run([pnpm, "build"]);
 run([
-  "pnpm",
+  pnpm,
   "exec",
   "wrangler",
   "d1",
@@ -45,7 +48,7 @@ const secretFile = path.join(directory, "secrets.json");
 try {
   fs.writeFileSync(secretFile, secretData, { mode: 0o600 });
   run([
-    "pnpm",
+    pnpm,
     "exec",
     "wrangler",
     "deploy",
