@@ -37,7 +37,7 @@ run([
   "DB",
   "--remote",
   "--config",
-  "wrangler.deploy.toml",
+  "wrangler.deploy.jsonc",
 ]);
 const secretData = run(["node", "scripts/configure.mjs", "--secrets-json"], {
   stdio: ["ignore", "pipe", "inherit"],
@@ -53,7 +53,7 @@ try {
     "wrangler",
     "deploy",
     "--config",
-    "wrangler.deploy.toml",
+    "wrangler.deploy.jsonc",
     "--secrets-file",
     secretFile,
   ]);

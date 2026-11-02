@@ -15,6 +15,6 @@ frontend/build
 .dev.vars.*
 .wrangler
 
-wrangler.deploy.toml
+wrangler.deploy.jsonc
 
 !.dev.vars.example

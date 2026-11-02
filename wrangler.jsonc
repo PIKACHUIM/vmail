@@ -1,0 +1,80 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tempmail-work",
+  "main": "worker/src/index.ts",
+
+  // 打包配置
+  "minify": true,
+  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_date": "2026-10-18",
+  "keep_vars": true,
+
+  // D1 数据库。${...} 只是占位符，wrangler 不会展开：
+  // 部署前由 scripts/configure.mjs 渲染成 wrangler.deploy.jsonc（已被 .gitignore 忽略）
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "${D1_DATABASE_NAME}",
+      "database_id": "${D1_DATABASE_ID}",
+      "migrations_dir": "worker/drizzle"
+    }
+  ],
+
+  // 普通变量。密钥不要写在这里，走 wrangler secret（configure.mjs 会从环境变量上传）
+  "vars": {
+    "PASSWORD": "${PASSWORD}",
+    "COOKIES_SECRET": "${COOKIES_SECRET}",
+    "EMAIL_DOMAIN": "${EMAIL_DOMAIN}",
+    "SEND_CHANNEL": "${SEND_CHANNEL}",
+    "SENDER_EMAIL": "${SENDER_EMAIL}",
+    "SEND_USER_DAILY_LIMIT": "10",
+    "SEND_GLOBAL_DAILY_LIMIT": "100",
+    "SEND_RATE_LIMIT_PER_MINUTE": "${SEND_RATE_LIMIT_PER_MINUTE}",
+    "SEND_IP_RATE_LIMIT_PER_MINUTE": "${SEND_IP_RATE_LIMIT_PER_MINUTE}",
+    "TURNSTILE_KEY": "${TURNSTILE_KEY}",
+    "TURNSTILE_SECRET": "${TURNSTILE_SECRET}",
+    "API_RATE_LIMIT_PER_MINUTE": "${API_RATE_LIMIT_PER_MINUTE}",
+    "SHOW_AFF": "${SHOW_AFF}",
+    "ENABLE_OPENAPI": "false",
+    "BETTER_AUTH_URL": "",
+    "API_DAILY_LIMIT": "1000",
+    "MAILBOX_DAILY_LIMIT": "20",
+    "MAX_ACTIVE_MAILBOXES": "20",
+    "GLOBAL_API_DAILY_LIMIT": "100000",
+    "GLOBAL_INBOUND_DAILY_LIMIT": "100000",
+    "MAILBOX_INBOUND_DAILY_LIMIT": "100",
+    "MAX_EMAIL_BYTES": "262144",
+    "SUSPEND_DATABASE_ACCESS": "false"
+  },
+
+  // Cloudflare 原生邮件发送绑定
+  "send_email": [{ "name": "SEND_EMAIL" }],
+
+  // 每小时运行一次清理任务
+  "triggers": { "crons": ["0 * * * *"] },
+
+  "build": { "command": "pnpm run build" },
+
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "frontend/build/client"
+  },
+
+  "durable_objects": {
+    "bindings": [{ "name": "ACCESS", "class_name": "AccessLedger" }]
+  },
+
+  "migrations": [
+    { "tag": "v1-access-ledger", "new_sqlite_classes": ["AccessLedger"] }
+  ],
+
+  "ratelimits": [
+    { "name": "EDGE_IP", "namespace_id": "1001", "simple": { "limit": 120, "period": 60 } },
+    { "name": "EDGE_KEY", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } }
+  ],
+
+  "observability": { "enabled": true, "head_sampling_rate": 0.01 }
+
+  // Free 计划不支持 CPU 限制；升级 Workers Paid 后可加回：
+  // "limits": { "cpu_ms": 100 }
+}

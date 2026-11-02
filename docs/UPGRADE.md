@@ -36,7 +36,7 @@
 
 ## 1. 准备配置
 
-复制 .env.example 为不提交 Git 的 .env，保留原 D1 ID、名称和邮件域名。不要在公共 wrangler.toml 或前端填写密钥。
+复制 .env.example 为不提交 Git 的 .env，保留原 D1 ID、名称和邮件域名。不要在公共 wrangler.jsonc 或前端填写密钥。
 
 网页模式必填：D1_DATABASE_ID、D1_DATABASE_NAME、EMAIL_DOMAIN、MAILBOX_TOKEN_SECRET。用密码管理器或 openssl rand -base64 48 生成独立随机密钥。升级时保留已存在的 MAILBOX_TOKEN_SECRET。
 
@@ -73,7 +73,7 @@ OAuth 可以暂不配置：保留 ENABLE_OPENAPI=false，网页邮箱仍可使�
     pnpm setup:check
     pnpm run deploy
 
-部署脚本校验配置、执行测试/类型检查/构建、应用 D1 迁移、上传 Secrets，最后部署 Worker 和 Durable Object migration。生成的 wrangler.deploy.toml 不含 Secrets，被 Git 忽略。Cloudflare 授权使用 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID，兼容原 CF_API_TOKEN / CF_ACCOUNT_ID。
+部署脚本校验配置、执行测试/类型检查/构建、应用 D1 迁移、上传 Secrets，最后部署 Worker 和 Durable Object migration。生成的 wrangler.deploy.jsonc 不含 Secrets，被 Git 忽略。Cloudflare 授权使用 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID，兼容原 CF_API_TOKEN / CF_ACCOUNT_ID。
 
 GitHub Actions 部署者：在仓库 Actions Secrets 中补齐上述配置，特别是 MAILBOX_TOKEN_SECRET；工作流使用同一脚本。先以 ENABLE_OPENAPI=false 完成升级并验证，再设为 true 重新部署。配置未通过检查时，迁移和部署不会开始。原有 Secret 应从现有部署配置保留，不要重新生成。
 

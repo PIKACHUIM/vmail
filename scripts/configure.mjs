@@ -2,6 +2,55 @@ import fs from "node:fs";
 import process from "node:process";
 if (fs.existsSync(".env")) process.loadEnvFile(".env");
 const env = process.env;
+
+// 去掉 // 与 /* */ 注释后按 JSON 解析（字符串内的斜杠不受影响）
+function parseJsonc(text) {
+  let out = "";
+  let inString = false;
+  let inLine = false;
+  let inBlock = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const next = text[i + 1];
+    if (inLine) {
+      if (c === "\n") {
+        inLine = false;
+        out += c;
+      }
+      continue;
+    }
+    if (inBlock) {
+      if (c === "*" && next === "/") {
+        inBlock = false;
+        i++;
+      }
+      continue;
+    }
+    if (inString) {
+      out += c;
+      if (c === "\\") out += text[++i] ?? "";
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      out += c;
+      continue;
+    }
+    if (c === "/" && next === "/") {
+      inLine = true;
+      i++;
+      continue;
+    }
+    if (c === "/" && next === "*") {
+      inBlock = true;
+      i++;
+      continue;
+    }
+    out += c;
+  }
+  return JSON.parse(out);
+}
 const secrets = [
   "MAILBOX_TOKEN_SECRET",
   "BETTER_AUTH_SECRET",
@@ -97,7 +146,11 @@ if (oauth.some((name) => !env[name]))
   console.warn(
     "OAuth sign-in is not fully configured; the login dialog will show a setup message.",
   );
-let config = fs.readFileSync("wrangler.toml", "utf8");
+const config = parseJsonc(fs.readFileSync("wrangler.jsonc", "utf8"));
+if (!Array.isArray(config.d1_databases) || !config.d1_databases[0]) {
+  console.error("wrangler.jsonc must declare a d1_databases binding.");
+  process.exit(1);
+}
 const vars = {
   EMAIL_DOMAIN: env.EMAIL_DOMAIN,
   BETTER_AUTH_URL: env.BETTER_AUTH_URL ?? "",
@@ -130,25 +183,11 @@ if (
   console.error("Sender provider secret is missing.");
   process.exit(1);
 }
-config = config
-  .replace(
-    /database_name = [^\r\n]*/,
-    "database_name = " + JSON.stringify(env.D1_DATABASE_NAME),
-  )
-  .replace(
-    /database_id = [^\r\n]*/,
-    "database_id = " + JSON.stringify(env.D1_DATABASE_ID),
-  );
-config = config.replace(
-  /\[vars\][\s\S]*?(?=\n\[)/,
-  "[vars]\n" +
-    Object.entries(vars)
-      .map(([name, value]) => name + " = " + JSON.stringify(value))
-      .join("\n") +
-    "\n",
-);
+config.d1_databases[0].database_name = env.D1_DATABASE_NAME;
+config.d1_databases[0].database_id = env.D1_DATABASE_ID;
+config.vars = vars;
 if (!process.argv.includes("--check"))
-  fs.writeFileSync("wrangler.deploy.toml", config);
+  fs.writeFileSync("wrangler.deploy.jsonc", JSON.stringify(config, null, 2) + "\n");
 if (process.argv.includes("--secrets-json")) {
   // Pipe directly to wrangler secret bulk. Never log this output.
   process.stdout.write(
@@ -163,7 +202,7 @@ if (process.argv.includes("--secrets-json")) {
     "Configuration validated. " +
       (process.argv.includes("--check")
         ? ""
-        : "Generated wrangler.deploy.toml without secrets."),
+        : "Generated wrangler.deploy.jsonc without secrets."),
   );
   console.log(
     "Upgrade changes: legacy API keys are disabled; legacy mailbox passwords no longer authorize access.",

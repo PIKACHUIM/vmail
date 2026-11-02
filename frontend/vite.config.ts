@@ -6,7 +6,7 @@ import { resolve } from 'path';
 export default defineConfig({
   plugins: [react()],
   build: {
-    outDir: 'build/client', // 重要：确保输出目录与 wrangler.toml 中的 assets.directory 一致
+    outDir: 'build/client', // 重要：确保输出目录与 wrangler.jsonc 中的 assets.directory 一致
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),

@@ -75,7 +75,7 @@ TURNSTILE_KEY 和 TURNSTILE_SECRET 必须一起配置或一起留空。SEND_CHAN
 
 向 main 推送或在 Actions → Deploy to Cloudflare → Run workflow 手动运行。流程依次检查 Cloudflare 凭据、安装 Node.js 22 与 pnpm、校验配置、运行测试/类型检查/构建、应用 D1 全量未执行迁移，再部署 Worker、静态资源与 Durable Objects。
 
-脚本读取配置后生成被 Git 忽略的 wrangler.deploy.toml；不直接覆盖源 wrangler.toml。密钥通过临时文件单独上传，文件随后删除。不要把 .env、.dev.vars 或真实密钥提交到 Git。Cloudflare 控制台改值后，下次 Actions 可能用仓库配置覆盖，因此长期设置应更新仓库配置源。
+脚本读取配置后生成被 Git 忽略的 wrangler.deploy.jsonc；不直接覆盖源 wrangler.jsonc。密钥通过临时文件单独上传，文件随后删除。不要把 .env、.dev.vars 或真实密钥提交到 Git。Cloudflare 控制台改值后，下次 Actions 可能用仓库配置覆盖，因此长期设置应更新仓库配置源。
 
 首次部署后：
 

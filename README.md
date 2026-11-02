@@ -58,7 +58,7 @@
    ```
 
 4. 在 Cloudflare 控制台的邮箱域名下配置 **Email Routing → Catch-all → Send to a Worker**，指向本 Worker。
-   若自动绑定未生效（例如仓库内 `wrangler.toml` 仍是占位符），按[手动部署](#-自部署教程)填写 D1 ID 后执行 `pnpm deploy`。
+   若自动绑定未生效（例如仓库内 `wrangler.jsonc` 仍是占位符），按[手动部署](#-自部署教程)填写 D1 ID 后执行 `pnpm deploy`。
 
 ### ② 腾讯 EdgeOne Pages（前端静态托管）
 
@@ -180,7 +180,7 @@ flowchart TD
    pnpm deploy
    ```
 
-   脚本会校验、测试、类型检查、构建、应用 D1 迁移并部署 Worker/静态资源和 Durable Objects。保留源文件 `wrangler.toml` 的占位符；脚本生成被 Git 忽略且不含密钥的 `wrangler.deploy.toml`，密钥随部署单独上传。Cloudflare Pages 的变量不用于本 Workers 项目。
+   脚本会校验、测试、类型检查、构建、应用 D1 迁移并部署 Worker/静态资源和 Durable Objects。保留源文件 `wrangler.jsonc` 的占位符；脚本生成被 Git 忽略且不含密钥的 `wrangler.deploy.jsonc`，密钥随部署单独上传。Cloudflare Pages 的变量不用于本 Workers 项目。
 
 4. 配置站点自定义域名与 `BETTER_AUTH_URL` 一致。在邮箱域名的 Email Routing 中启用 Catch-all → Send to a Worker，指向本 Worker，按向导设置 DNS。
 
