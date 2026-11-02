@@ -87,16 +87,18 @@ const required = [
   "EMAIL_DOMAIN",
   "MAILBOX_TOKEN_SECRET",
 ];
-const oauth = [
-  "BETTER_AUTH_URL",
-  "BETTER_AUTH_SECRET",
-  "API_KEY_SECRET",
-  "GOOGLE_CLIENT_ID",
-  "GOOGLE_CLIENT_SECRET",
-  "GITHUB_CLIENT_ID",
-  "GITHUB_CLIENT_SECRET",
-];
-if (enabled) required.push(...oauth);
+const oauth = ["BETTER_AUTH_URL", "BETTER_AUTH_SECRET", "API_KEY_SECRET"];
+const providers = {
+  github: ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"],
+  google: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+};
+const configuredProviders = Object.entries(providers)
+  .filter(([, names]) => names.every((name) => env[name]?.trim()))
+  .map(([provider]) => provider);
+if (enabled) {
+  required.push(...oauth);
+  if (!configuredProviders.length) required.push("GITHUB_CLIENT_ID");
+}
 const missing = required.filter(
   (name) => !env[name]?.trim() || env[name].startsWith("replace-with-"),
 );
@@ -142,7 +144,7 @@ if (!enabled)
   console.warn(
     "Public API remains disabled. Complete OAuth settings before setting ENABLE_OPENAPI=true.",
   );
-if (oauth.some((name) => !env[name]))
+if (oauth.some((name) => !env[name]) || !configuredProviders.length)
   console.warn(
     "OAuth sign-in is not fully configured; the login dialog will show a setup message.",
   );
@@ -208,7 +210,7 @@ if (process.argv.includes("--secrets-json")) {
     "Upgrade changes: legacy API keys are disabled; legacy mailbox passwords no longer authorize access.",
   );
   if (env.BETTER_AUTH_URL)
-    for (const provider of ["github", "google"])
+    for (const provider of configuredProviders)
       console.log(
         provider +
           " callback: " +

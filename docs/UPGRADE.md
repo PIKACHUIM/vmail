@@ -4,7 +4,7 @@
 
 从 v3.2.0 升级需要应用 **0006_outbound_logs.sql**，自动部署脚本会处理；不要仅上传前端或跳过迁移。新增 SEND_USER_DAILY_LIMIT（默认 10）和 SEND_GLOBAL_DAILY_LIMIT（默认 100），未配置时使用默认值。GitHub Actions 将这两项读取自 Repository **Variables**；其他变量映射见 [Actions 教程](github-action-tutorial.md)，完整 OAuth/额度说明见 [README](../README.md#环境变量)。
 
-网页发件现在必须登录；两个 OAuth Provider 和签名配置都需齐全。已有 API Key、登录密钥、邮箱签名密钥保持原值即可。新增用户发件记录 /dashboard/outbound、管理员全站发件管理 /dashboard/admin/outbound，并将发件纳入概览统计。首页高度、收件箱顶部对齐、导航 Star/菜单箭头和发件弹框已修复；深色表单支持手机滚动。
+网页发件现在必须登录；至少配置一个 OAuth Provider（GitHub 或 Google）并配齐签名密钥。已有 API Key、登录密钥、邮箱签名密钥保持原值即可。新增用户发件记录 /dashboard/outbound、管理员全站发件管理 /dashboard/admin/outbound，并将发件纳入概览统计。首页高度、收件箱顶部对齐、导航 Star/菜单箭头和发件弹框已修复；深色表单支持手机滚动。
 
 发送记录含主题、正文和结果，保留 30 天，每小时分批清理；升级前未存储的发送内容不会补录。服务商已接收不等于最终送达。网页发件通过 /api/send，公开 v1 API 不新增发件端点。
 

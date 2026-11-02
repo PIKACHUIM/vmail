@@ -9,6 +9,8 @@ export interface AppConfig {
   apiRateLimitPerMinute: number;
   openApiEnabled: boolean;
   authEnabled: boolean;
+  // 已配置凭据的登录渠道，未配置的渠道不展示入口
+  authProviders?: Array<"github" | "google">;
   setupRequired: boolean;
   upgradeNotice: string;
   apiDailyLimit: number;

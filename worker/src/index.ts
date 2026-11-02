@@ -3,7 +3,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { emails, mailboxes } from './database/schema';
 import { getSessionCookie } from 'better-auth/cookies';
-import { authReady, createAuth } from './auth';
+import { authProviders, authReady, createAuth } from './auth';
 import accountRoutes from './account-routes';
 import { edgeGuard, reserveGlobal, failure, globalBudget } from './guard';
 import { positive, GLOBAL_SHARDS } from './limits';
@@ -424,6 +424,7 @@ app.get('/config', (c) => {
     turnstileEnabled,
     cookiesSecret: '',
     authEnabled: authReady(c.env),
+    authProviders: authProviders(c.env),
     apiDailyLimit: positive(c.env.API_DAILY_LIMIT, 1000),
     mailboxDailyLimit: positive(c.env.MAILBOX_DAILY_LIMIT, 20),
     maxApiKeys: 3,

@@ -114,7 +114,10 @@ export function LoginDialog({
             : "Create free API keys and connect email to your app. Up to 3 keys per account, with shared usage limits."}
         </p>
         <div className="space-y-3">
-          {(["github", "google"] as const).map((provider) => (
+          {(config.authProviders?.length
+            ? config.authProviders
+            : (["github", "google"] as const)
+          ).map((provider) => (
             <button
               type="button"
               key={provider}

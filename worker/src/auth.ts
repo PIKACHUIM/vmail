@@ -6,18 +6,36 @@ import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./auth-schema";
 import type { Env } from "./index";
 import { generateUserKey, hashToken } from "./key-token";
+export type AuthProvider = "github" | "google";
+export function authProviders(env: Env): AuthProvider[] {
+  const providers: AuthProvider[] = [];
+  if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) providers.push("github");
+  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET) providers.push("google");
+  return providers;
+}
 export function authReady(env: Env) {
   return Boolean(
     env.BETTER_AUTH_SECRET &&
       env.API_KEY_SECRET &&
       env.BETTER_AUTH_URL &&
-      env.GITHUB_CLIENT_ID &&
-      env.GITHUB_CLIENT_SECRET &&
-      env.GOOGLE_CLIENT_ID &&
-      env.GOOGLE_CLIENT_SECRET,
+      authProviders(env).length > 0,
   );
 }
 export function createAuth(env: Env, creatingFor?: string) {
+  const socialProviders: {
+    github?: { clientId: string; clientSecret: string };
+    google?: { clientId: string; clientSecret: string };
+  } = {};
+  if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET)
+    socialProviders.github = {
+      clientId: env.GITHUB_CLIENT_ID,
+      clientSecret: env.GITHUB_CLIENT_SECRET,
+    };
+  if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET)
+    socialProviders.google = {
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
+    };
   return betterAuth({
     baseURL: env.BETTER_AUTH_URL,
     basePath: "/api/auth",
@@ -39,16 +57,7 @@ export function createAuth(env: Env, creatingFor?: string) {
         },
       },
     },
-    socialProviders: {
-      github: {
-        clientId: env.GITHUB_CLIENT_ID ?? "",
-        clientSecret: env.GITHUB_CLIENT_SECRET ?? "",
-      },
-      google: {
-        clientId: env.GOOGLE_CLIENT_ID ?? "",
-        clientSecret: env.GOOGLE_CLIENT_SECRET ?? "",
-      },
-    },
+    socialProviders,
     user: {
       additionalFields: {
         role: { type: "string", defaultValue: "user", input: false },
