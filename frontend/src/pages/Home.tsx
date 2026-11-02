@@ -12,6 +12,7 @@ import { MailList } from "../components/MailList.tsx";
 import { CopyButton } from "../components/CopyButton.tsx";
 // feat: 导入 loginByPassword
 import {
+  claimMailbox,
   getEmails,
   getEmailById,
   getMailboxMeta,
@@ -21,6 +22,13 @@ import {
   verifyTurnstile,
 } from "../services/api.ts";
 import { useConfig } from "../hooks/useConfig.ts";
+import { useAccount } from "../components/Account.tsx";
+import {
+  loadMailboxes,
+  removeMailbox,
+  upsertMailbox,
+  type StoredMailbox,
+} from "../lib/mailboxes.ts";
 // feat: 导入加密函数
 
 
@@ -63,6 +71,14 @@ export function Home() {
       toast(t('Mailbox security has been upgraded. Please create a new mailbox; legacy passwords no longer work.'), { duration: 10000 });
     }
   }, [address, mailboxToken, config.upgradeNotice, t]);
+
+  // 多邮箱管理：登录状态与本地保存的邮箱列表
+  const { data: account } = useAccount();
+  const [mailboxList, setMailboxList] = useState<StoredMailbox[]>(() =>
+    loadMailboxes(),
+  );
+  const [customName, setCustomName] = useState("");
+  const claimedMailboxRef = useRef<Set<string>>(new Set());
   // feat: 新增状态，用于存储邮箱过期时间戳
   const [expiryTimestamp, setExpiryTimestamp] = useState<number | undefined>(
     () => {
@@ -258,11 +274,19 @@ export function Home() {
       const authorization = await verifyTurnstile(
         selectedDomain,
         requireTurnstile ? turnstileToken : undefined,
+        customName.trim() || undefined,
       );
       const mailbox = authorization.mailbox;
-      // feat: 计算并存储过期时间戳 (当前时间 + 24小时)
-      const now = Date.now();
-      const expires = now + 24 * 60 * 60 * 1000;
+      // 有效期由后端按匿名/登录身份分别配置
+      const expires =
+        authorization.expiresAt ??
+        Date.now() +
+          (account
+            ? config.userMailboxExpiryHours
+            : config.mailboxExpiryHours) *
+            60 *
+            60 *
+            1000;
       Cookies.set("userMailbox", mailbox, { expires: 1 }); // cookie 有效期1天
       Cookies.set("emailExpiry", expires.toString(), { expires: 1 }); // 存储过期时间戳
       if (authorization.mailboxToken) {
@@ -274,15 +298,28 @@ export function Home() {
       setMailboxToken(authorization.mailboxToken || "");
       setExpiryTimestamp(expires); // 更新状态
       setHasReceivedEmail(false); // 重置接收邮件状态
+      setCustomName("");
+      if (authorization.mailboxToken) {
+        setMailboxList((prev) =>
+          upsertMailbox(prev, {
+            address: mailbox,
+            mailboxToken: authorization.mailboxToken!,
+            expiresAt: expires,
+          }),
+        );
+      }
       toast.success(t("Email created successfully")); // feat: 使用全局 toast 提示
     } catch (error) {
-      toast.error(t("Failed to verify captcha"));
+      toast.error(
+        error instanceof Error ? error.message : t("Failed to verify captcha"),
+      );
       console.error("Turnstile verification failed:", error);
     }
   };
 
   // 停止使用当前邮箱地址
   const handleStopAddress = () => {
+    const current = address;
     Cookies.remove("userMailbox");
     Cookies.remove("mailboxToken");
     // feat: 移除过期时间 cookie
@@ -293,8 +330,137 @@ export function Home() {
     setHasReceivedEmail(false); // 重置状态
     setSelectedEmail(null); // 清除选中的邮件
     setExpiryTimestamp(undefined); // 清除过期时间状态
+    if (current) setMailboxList((prev) => removeMailbox(prev, current));
     queryClient.invalidateQueries({ queryKey: ["emails"] }); // 清理缓存
   };
+
+  // 切换到本地保存的另一个邮箱
+  const activateMailbox = (entry: StoredMailbox) => {
+    const remainingDays = Math.max(
+      1,
+      (entry.expiresAt - Date.now()) / (24 * 60 * 60 * 1000),
+    );
+    Cookies.set("userMailbox", entry.address, { expires: remainingDays });
+    Cookies.set("mailboxToken", entry.mailboxToken, { expires: remainingDays });
+    Cookies.set("emailExpiry", String(entry.expiresAt), {
+      expires: remainingDays,
+    });
+    mailboxMetaSignatureRef.current = null;
+    setAddress(entry.address);
+    setMailboxToken(entry.mailboxToken);
+    setExpiryTimestamp(entry.expiresAt);
+    setSelectedEmail(null);
+    setSelectedIds([]);
+    setHasReceivedEmail(false);
+  };
+
+  const handleSwitchMailbox = (nextAddress: string) => {
+    const entry = mailboxList.find((box) => box.address === nextAddress);
+    if (!entry) return;
+    activateMailbox(entry);
+  };
+
+  // 登录后把当前邮箱（以及本地保存的其它匿名邮箱）认领到账号
+  useEffect(() => {
+    if (!account?.id) return;
+    let cancelled = false;
+    void (async () => {
+      const candidates = new Map<string, string>();
+      for (const box of loadMailboxes()) candidates.set(box.address, box.mailboxToken);
+      if (address && mailboxToken) candidates.set(address, mailboxToken);
+      let claimedAny = false;
+      for (const [target, token] of candidates) {
+        if (cancelled) return;
+        if (claimedMailboxRef.current.has(target)) continue;
+        try {
+          const result = await claimMailbox(token);
+          claimedMailboxRef.current.add(target);
+          if (!result.claimed) continue;
+          claimedAny = true;
+          setMailboxList((prev) =>
+            upsertMailbox(prev, {
+              address: result.address,
+              mailboxToken: token,
+              expiresAt: result.expiresAt ?? Date.now(),
+            }),
+          );
+        } catch {
+          // 已属于其他账号或已过期时保持匿名状态
+        }
+      }
+      if (claimedAny && !cancelled) {
+        toast.success(t("Mailbox linked to your account"));
+        void queryClient.invalidateQueries({ queryKey: ["mailboxes"] });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [account?.id, address, mailboxToken, queryClient, t]);
+
+  // 当前邮箱写入本地列表（刷新后仍可切换回来）
+  useEffect(() => {
+    if (!address || !mailboxToken) return;
+    const storedExpiry = Number(Cookies.get("emailExpiry") ?? "");
+    setMailboxList((prev) => {
+      if (
+        prev.some(
+          (box) => box.address === address && box.mailboxToken === mailboxToken,
+        )
+      )
+        return prev;
+      return upsertMailbox(prev, {
+        address,
+        mailboxToken,
+        expiresAt:
+          Number.isFinite(storedExpiry) && storedExpiry > 0
+            ? storedExpiry
+            : Date.now() + config.mailboxExpiryHours * 60 * 60 * 1000,
+      });
+    });
+  }, [address, mailboxToken, config.mailboxExpiryHours]);
+
+  // 登录后把账号下的邮箱同步到首页切换列表
+  useEffect(() => {
+    if (!account?.id) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/account/mailboxes");
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          mailboxes?: Array<{ id: string; address: string; expires_at: number }>;
+        };
+        let list = loadMailboxes();
+        for (const box of data.mailboxes ?? []) {
+          if (cancelled) return;
+          if (box.expires_at * 1000 <= Date.now()) continue;
+          if (list.some((item) => item.address === box.address)) continue;
+          const tokenResponse = await fetch(
+            `/api/account/mailboxes/${encodeURIComponent(box.id)}/token`,
+            { method: "POST" },
+          );
+          if (!tokenResponse.ok) continue;
+          const tokenData = (await tokenResponse.json()) as {
+            address: string;
+            mailboxToken: string;
+            expiresAt?: number;
+          };
+          list = upsertMailbox(list, {
+            address: tokenData.address,
+            mailboxToken: tokenData.mailboxToken,
+            expiresAt: tokenData.expiresAt ?? box.expires_at * 1000,
+          });
+        }
+        if (!cancelled) setMailboxList(list);
+      } catch {
+        // 同步失败不影响本地列表
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [account?.id]);
 
   // feat: 手动刷新邮件
   const handleRefresh = () => {
@@ -302,30 +468,55 @@ export function Home() {
     toast.success(t("Mailbox refreshed"));
   };
 
-  // 修改：将延长邮箱有效期改为重置邮箱有效期
+  // 手动重置邮箱有效期（后端可通过 MAILBOX_RENEW_ENABLED 关闭）
   const handleResetExpiry = useCallback(async () => {
+    let refreshedToken = mailboxToken;
+    let newExpiry: number;
     if (mailboxToken) {
       try {
-        const refreshedToken = await refreshMailboxToken(mailboxToken);
-        Cookies.set("mailboxToken", refreshedToken, { expires: 1 });
-        setMailboxToken(refreshedToken);
+        const refreshed = await refreshMailboxToken(mailboxToken);
+        refreshedToken = refreshed.mailboxToken;
+        newExpiry =
+          refreshed.expiresAt ??
+          Date.now() +
+            (account
+              ? config.userMailboxExpiryHours
+              : config.mailboxExpiryHours) *
+              60 *
+              60 *
+              1000;
       } catch {
         toast.error(t("SEND_UNAUTHORIZED"));
         return;
       }
+    } else {
+      newExpiry =
+        Date.now() +
+        (account ? config.userMailboxExpiryHours : config.mailboxExpiryHours) *
+          60 *
+          60 *
+          1000;
     }
 
-    // feat: 计算新的过期时间戳 (当前时间 + 24小时)
-    const newExpiry = Date.now() + 24 * 60 * 60 * 1000;
-    // 计算新的 Cookie 过期时间（相对于当前时间1天）
-    const cookieExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    Cookies.set("emailExpiry", newExpiry.toString(), {
-      expires: cookieExpires,
-    }); // 更新 Cookie，有效期设为从现在起1天
+    const remainingDays = Math.max(
+      1,
+      (newExpiry - Date.now()) / (24 * 60 * 60 * 1000),
+    );
+    Cookies.set("mailboxToken", refreshedToken, { expires: remainingDays });
+    Cookies.set("emailExpiry", newExpiry.toString(), { expires: remainingDays });
+    setMailboxToken(refreshedToken);
     setExpiryTimestamp(newExpiry); // 更新状态
+    if (address && refreshedToken) {
+      setMailboxList((prev) =>
+        upsertMailbox(prev, {
+          address,
+          mailboxToken: refreshedToken,
+          expiresAt: newExpiry,
+        }),
+      );
+    }
     toast.success(t("Validity reset successfully")); // 修改：显示重置成功提示
-  }, [mailboxToken, t]);
+  }, [account, address, config.mailboxExpiryHours, config.userMailboxExpiryHours, mailboxToken, t]);
 
   // 删除邮件的 useMutation hook
   const deleteMutation = useMutation({
@@ -359,19 +550,39 @@ export function Home() {
     try {
       // fix: 调用更新后的 loginByPassword 函数，不再传递 token
       const data = await loginByPassword(password);
-      // feat: 登录成功后也设置过期时间戳
-      const now = Date.now();
-      const expires = now + 24 * 60 * 60 * 1000;
-      Cookies.set("userMailbox", data.address, { expires: 1 });
-      Cookies.set("emailExpiry", expires.toString(), { expires: 1 });
+      // 登录成功后按后端返回的有效期写入 cookie
+      const expires =
+        data.expiresAt ??
+        Date.now() +
+          (account
+            ? config.userMailboxExpiryHours
+            : config.mailboxExpiryHours) *
+            60 *
+            60 *
+            1000;
+      const remainingDays = Math.max(
+        1,
+        (expires - Date.now()) / (24 * 60 * 60 * 1000),
+      );
+      Cookies.set("userMailbox", data.address, { expires: remainingDays });
+      Cookies.set("emailExpiry", expires.toString(), { expires: remainingDays });
       if (data.mailboxToken) {
-        Cookies.set("mailboxToken", data.mailboxToken, { expires: 1 });
+        Cookies.set("mailboxToken", data.mailboxToken, { expires: remainingDays });
       } else {
         Cookies.remove("mailboxToken");
       }
       setAddress(data.address);
       setMailboxToken(data.mailboxToken || "");
       setExpiryTimestamp(expires); // 更新状态
+      if (data.mailboxToken) {
+        setMailboxList((prev) =>
+          upsertMailbox(prev, {
+            address: data.address,
+            mailboxToken: data.mailboxToken!,
+            expiresAt: expires,
+          }),
+        );
+      }
       setShowPasswordModal(false); // 关闭模态框
       toast.success(t("Login successful"));
     } catch (error: any) {
@@ -549,6 +760,44 @@ export function Home() {
           </div>
         </div>
 
+        {/* 多邮箱切换：本地保存的邮箱列表（登录后还会同步账号下的邮箱） */}
+        {mailboxList.length > 0 && (
+          <div className="w-full md:max-w-[350px] mb-2">
+            <div className="mb-2 font-semibold text-sm">
+              {t("Your mailboxes")}
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={address ?? ""}
+                onChange={(e) => handleSwitchMailbox(e.target.value)}
+                className="w-full p-2.5 rounded-md bg-white/10 text-white border border-cyan-50/20">
+                {!address && (
+                  <option value="" className="text-black">
+                    {t("Select a mailbox")}
+                  </option>
+                )}
+                {mailboxList.map((box) => (
+                  <option
+                    key={box.address}
+                    value={box.address}
+                    className="text-black">
+                    {box.address}
+                    {box.expiresAt <= Date.now() ? ` (${t("Expired")})` : ""}
+                  </option>
+                ))}
+              </select>
+              {address && (
+                <button
+                  type="button"
+                  onClick={handleStopAddress}
+                  className="px-3 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-sm whitespace-nowrap">
+                  {t("Remove")}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* 根据是否存在邮箱地址显示不同内容 */}
         {address ? (
           <div className="w-full md:max-w-[350px] mb-4">
@@ -564,6 +813,7 @@ export function Home() {
               <CountdownTimer
                 expiryTimestamp={expiryTimestamp}
                 onReset={handleResetExpiry}
+                canRenew={config.mailboxRenewEnabled}
               />
             )}
             <button
@@ -571,9 +821,41 @@ export function Home() {
               className="py-2.5 rounded-md w-full bg-cyan-600 hover:opacity-90 disabled:cursor-not-allowed disabled:bg-zinc-500">
               {t("Stop")}
             </button>
+            <p
+              className="mt-4 text-sm text-cyan-500 cursor-pointer"
+              onClick={() => setShowPasswordModal(true)}>
+              <PasswordIcon className="inline-block w-4 h-4 mr-2" />
+              {t("Have a password? Login.")}
+            </p>
           </div>
         ) : (
           <div className="w-full md:max-w-[350px]">
+            {/* 自定义用户名：MAILBOX_NAME_LENGTH=0 时后端禁用，这里不显示 */}
+            {config.mailboxNameLength > 0 && (
+              <div className="mb-4">
+                <div className="mb-3 font-semibold">
+                  {t("Custom address (optional)")}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={customName}
+                    onChange={(e) =>
+                      setCustomName(
+                        e.target.value
+                          .toLowerCase()
+                          .replace(/[^a-z0-9._-]/g, ""),
+                      )
+                    }
+                    maxLength={config.mailboxNameLength}
+                    placeholder={t("Random if empty")}
+                    className="w-full p-2.5 rounded-md bg-white/10 text-white border border-cyan-50/20"
+                  />
+                  <span className="text-sm text-zinc-300 whitespace-nowrap">
+                    @{selectedDomain}
+                  </span>
+                </div>
+              </div>
+            )}
             {/* 邮箱域名后缀选择 */}
             <div className="mb-4">
               <div className="mb-3 font-semibold">{t("Domain")}</div>
@@ -632,7 +914,7 @@ export function Home() {
           setSelectedIds={setSelectedIds}
           onSelectEmail={handleSelectEmail} // 传递选择邮件的函数
           // feat: 传递新状态和回调函数
-          showViewPasswordButton={hasReceivedEmail}
+          showViewPasswordButton={Boolean(address && mailboxToken)}
           onShowPassword={() => {
             const password = getPassword();
             if (password) {

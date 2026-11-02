@@ -26,6 +26,15 @@ export interface AppConfig {
   sendChannel: "" | "resend" | "mailchannels" | "cloudflare";
   // 后端配置的、发件渠道允许或已验证的发件邮箱
   senderEmail: string;
+  // 邮箱生命周期（小时）：匿名 / 登录用户
+  mailboxExpiryHours: number;
+  userMailboxExpiryHours: number;
+  // 是否允许手动延长有效期
+  mailboxRenewEnabled: boolean;
+  // 自定义用户名最大长度，0 表示禁用
+  mailboxNameLength: number;
+  // 随机地址长度
+  mailboxRandomLength: number;
 }
 
 // 创建 React Context

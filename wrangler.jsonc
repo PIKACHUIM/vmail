@@ -39,6 +39,12 @@
     "API_DAILY_LIMIT": "1000",
     "MAILBOX_DAILY_LIMIT": "20",
     "MAX_ACTIVE_MAILBOXES": "20",
+    // 邮箱生命周期与地址生成
+    "MAILBOX_EXPIRY_HOURS": "24",
+    "USER_MAILBOX_EXPIRY_HOURS": "24",
+    "MAILBOX_RENEW_ENABLED": "true",
+    "MAILBOX_NAME_LENGTH": "0",
+    "MAILBOX_RANDOM_LENGTH": "16",
     "GLOBAL_API_DAILY_LIMIT": "100000",
     "GLOBAL_INBOUND_DAILY_LIMIT": "100000",
     "MAILBOX_INBOUND_DAILY_LIMIT": "100",
@@ -51,8 +57,6 @@
 
   // 每小时运行一次清理任务
   "triggers": { "crons": ["0 * * * *"] },
-
-  "build": { "command": "pnpm run build" },
 
   "assets": {
     "binding": "ASSETS",

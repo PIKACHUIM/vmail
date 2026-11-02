@@ -79,6 +79,9 @@ const numbers = {
   SEND_GLOBAL_DAILY_LIMIT: 100,
   SEND_RATE_LIMIT_PER_MINUTE: 3,
   SEND_IP_RATE_LIMIT_PER_MINUTE: 10,
+  MAILBOX_EXPIRY_HOURS: 24,
+  USER_MAILBOX_EXPIRY_HOURS: 24,
+  MAILBOX_RANDOM_LENGTH: 16,
 };
 const enabled = env.ENABLE_OPENAPI?.trim().toLowerCase() === "true";
 const required = [
@@ -169,6 +172,14 @@ for (const [name, fallback] of Object.entries(numbers)) {
   }
   vars[name] = String(value);
 }
+const nameLength = env.MAILBOX_NAME_LENGTH ? Number(env.MAILBOX_NAME_LENGTH) : 0;
+if (!Number.isSafeInteger(nameLength) || nameLength < 0 || nameLength > 32) {
+  console.error("MAILBOX_NAME_LENGTH must be 0 (disabled) or 1-32.");
+  process.exit(1);
+}
+vars.MAILBOX_NAME_LENGTH = String(nameLength);
+vars.MAILBOX_RENEW_ENABLED =
+  env.MAILBOX_RENEW_ENABLED === "false" ? "false" : "true";
 if (vars.SEND_CHANNEL === "send_email") vars.SEND_CHANNEL = "cloudflare";
 if (
   vars.SEND_CHANNEL &&

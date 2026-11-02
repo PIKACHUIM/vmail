@@ -151,5 +151,12 @@
   "LOGIN_REQUIRED": "请先登录后再发件",
   "SEND_QUOTA_EXCEEDED": "已达到发件额度或频率限制，请稍后重试",
   "SEND_GLOBAL_QUOTA_EXCEEDED": "全站今日发件额度已用完，请明天再试",
-  "Sign in": "登录 / 注册"
+  "Sign in": "登录 / 注册",
+  "Your mailboxes": "我的邮箱",
+  "Select a mailbox": "选择邮箱",
+  "Expired": "已过期",
+  "Remove": "移除",
+  "Mailbox linked to your account": "邮箱已关联到你的账号",
+  "Custom address (optional)": "自定义地址（可选）",
+  "Random if empty": "留空则随机生成"
 }

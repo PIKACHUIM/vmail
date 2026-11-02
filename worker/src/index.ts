@@ -47,6 +47,12 @@ export interface Env extends Omit<CloudflareBindings, 'RESEND_API_KEY' | 'MAILCH
   ADMIN_EMAILS?: string;
   SEND_USER_DAILY_LIMIT?: string;
   SEND_GLOBAL_DAILY_LIMIT?: string;
+  // 邮箱生命周期（小时）与地址生成策略
+  MAILBOX_EXPIRY_HOURS?: string;
+  USER_MAILBOX_EXPIRY_HOURS?: string;
+  MAILBOX_RENEW_ENABLED?: string;
+  MAILBOX_NAME_LENGTH?: string;
+  MAILBOX_RANDOM_LENGTH?: string;
 
   RESEND_API_KEY?: string;
   MAILCHANNELS_API_KEY?: string;
@@ -97,8 +103,40 @@ function parsePositiveLimit(value: string | undefined, fallback: number): number
   return Math.min(parsed, 1000);
 }
 
-function getMailboxTokenTtlSeconds(): number {
-  return 24 * 60 * 60;
+function parseBoundedInt(value: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+// 邮箱有效期：匿名邮箱与登录用户可分别配置
+function mailboxExpiryHours(env: Env, owned: boolean): number {
+  return parseBoundedInt(owned ? env.USER_MAILBOX_EXPIRY_HOURS : env.MAILBOX_EXPIRY_HOURS, 24, 1, 24 * 30);
+}
+
+function mailboxExpiryMs(env: Env, owned: boolean): number {
+  return mailboxExpiryHours(env, owned) * 60 * 60 * 1000;
+}
+
+function mailboxRenewEnabled(env: Env): boolean {
+  return (env.MAILBOX_RENEW_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
+}
+
+// 0 表示禁止自定义用户名
+function mailboxNameMaxLength(env: Env): number {
+  return parseBoundedInt(env.MAILBOX_NAME_LENGTH, 0, 0, 32);
+}
+
+function mailboxRandomLength(env: Env): number {
+  return parseBoundedInt(env.MAILBOX_RANDOM_LENGTH, 16, 6, 32);
+}
+
+function randomLocalPart(env: Env): string {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, mailboxRandomLength(env));
+}
+
+function isValidLocalPart(name: string, maxLength: number): boolean {
+  return name.length >= 1 && name.length <= maxLength && /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(name);
 }
 
 function isSiteUnlocked(request: Request, env: Env): boolean {
@@ -214,7 +252,7 @@ const mailboxAuth: import('hono').MiddlewareHandler<{ Bindings: Env; Variables: 
 // feat: 新增一个专门用于人机验证的接口。
 // 前端应在生成邮箱地址前先调用此接口。
 api.post('/verify', turnstile, async (c) => {
-  const body = c.get('parsedBody') as { domain?: string };
+  const body = c.get('parsedBody') as { domain?: string; name?: string };
   const domain = body?.domain?.trim().toLowerCase();
   if (!domain || !isAllowedMailboxAddress(`mailbox@${domain}`, c.env.EMAIL_DOMAIN)) {
     return c.json({
@@ -222,7 +260,26 @@ api.post('/verify', turnstile, async (c) => {
       message: 'Mailbox domain is not configured',
     }, 400);
   }
-  const mailbox = `${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}@${domain}`;
+
+  // 自定义用户名：MAILBOX_NAME_LENGTH=0 时禁用
+  const nameLimit = mailboxNameMaxLength(c.env);
+  const requestedName = typeof body?.name === 'string' ? body.name.trim().toLowerCase() : '';
+  let localPart: string;
+  if (requestedName) {
+    if (nameLimit < 1) {
+      return c.json({ code: 'CUSTOM_NAME_DISABLED', message: 'Custom mailbox names are disabled' }, 400);
+    }
+    if (!isValidLocalPart(requestedName, nameLimit)) {
+      return c.json({
+        code: 'INVALID_MAILBOX_NAME',
+        message: `Use 1-${nameLimit} characters: a-z, 0-9, dot, hyphen or underscore`,
+      }, 400);
+    }
+    localPart = requestedName;
+  } else {
+    localPart = randomLocalPart(c.env);
+  }
+  const mailbox = `${localPart}@${domain}`;
 
   if (!c.env.MAILBOX_TOKEN_SECRET) return failure('SERVICE_UNAVAILABLE', 'Mailbox authorization is not configured', 503);
   const ip = c.req.header('CF-Connecting-IP') ?? 'local';
@@ -233,21 +290,32 @@ api.post('/verify', turnstile, async (c) => {
   if (!account && getSessionCookie(c.req.raw)) return failure('UNAUTHORIZED', 'Session expired or revoked; sign in again', 401);
   const owner = account?.user.id ?? '';
   if (owner && (await c.env.ACCESS.getByName('user:' + owner).accessState()).banned) return failure('ACCOUNT_BANNED', 'Account is banned', 403);
+
+  const taken = await c.env.DB.prepare('SELECT id FROM mailboxes WHERE address=?').bind(mailbox).first<{ id: string }>();
+  if (taken) return failure('MAILBOX_TAKEN', 'That address is already in use', 409);
+
+  const expiresAtMs = Date.now() + mailboxExpiryMs(c.env, Boolean(owner));
   if (owner) {
     const userLedger = c.env.ACCESS.getByName('user:' + owner);
     const createQuota = await userLedger.consume([{ key: 'create-day', seconds: 86400, max: positive(c.env.MAILBOX_DAILY_LIMIT, 20) }]);
-    if (!createQuota.allowed || !await userLedger.reserveMailbox(mailbox, Date.now() + 86400_000, positive(c.env.MAX_ACTIVE_MAILBOXES, 20))) return failure('MAILBOX_LIMIT', 'Mailbox creation limit reached', 429);
+    if (!createQuota.allowed || !await userLedger.reserveMailbox(mailbox, expiresAtMs, positive(c.env.MAX_ACTIVE_MAILBOXES, 20))) return failure('MAILBOX_LIMIT', 'Mailbox creation limit reached', 429);
   }
-  await c.env.ACCESS.getByName('mailbox:' + mailbox).activateMailbox(Date.now() + 86400_000, false, owner);
-  await getD1DB(c.env.DB).insert(mailboxes).values({ id: crypto.randomUUID(), address: mailbox, domain, apiKeyId: 'web', userId: owner || null, expiresAt: new Date(Date.now() + 86400_000), createdAt: new Date(), updatedAt: new Date() });
+  await c.env.ACCESS.getByName('mailbox:' + mailbox).activateMailbox(expiresAtMs, false, owner);
+  try {
+    await getD1DB(c.env.DB).insert(mailboxes).values({ id: crypto.randomUUID(), address: mailbox, domain, apiKeyId: 'web', userId: owner || null, expiresAt: new Date(expiresAtMs), createdAt: new Date(), updatedAt: new Date() });
+  } catch {
+    return failure('MAILBOX_TAKEN', 'That address is already in use', 409);
+  }
   await recordMailboxUsage(c.env, owner, mailbox, 'mailboxes_created');
-  const mailboxToken = await createMailboxToken(mailbox, c.env.MAILBOX_TOKEN_SECRET, Date.now(), getMailboxTokenTtlSeconds());
+  const mailboxToken = await createMailboxToken(mailbox, c.env.MAILBOX_TOKEN_SECRET, Date.now(), Math.floor(mailboxExpiryMs(c.env, Boolean(owner)) / 1000));
 
   return c.json({
     success: true,
     bypassed: !isTurnstileEnabled(c.env),
     mailbox,
     mailboxToken,
+    expiresAt: expiresAtMs,
+    renewEnabled: mailboxRenewEnabled(c.env),
   });
 });
 
@@ -265,16 +333,21 @@ api.post('/mailbox-token/refresh', mailboxAuth, async (c) => {
   }
 
   const owner = await c.env.ACCESS.getByName('mailbox:' + mailbox).mailboxOwner();
-  if (owner && !await c.env.ACCESS.getByName('user:' + owner).reserveMailbox(mailbox, Date.now() + 86400_000, positive(c.env.MAX_ACTIVE_MAILBOXES, 20))) return failure('MAILBOX_LIMIT', 'Active mailbox limit reached', 429);
-  await c.env.ACCESS.getByName('mailbox:' + mailbox).activateMailbox(Date.now() + 86400_000, true);
-  await getD1DB(c.env.DB).update(mailboxes).set({ expiresAt: new Date(Date.now() + 86400_000) }).where(eq(mailboxes.address, mailbox));
+  if (!mailboxRenewEnabled(c.env)) {
+    return c.json({ code: 'RENEW_DISABLED', message: 'Mailbox renewal is disabled' }, 403);
+  }
+  const expiresAtMs = Date.now() + mailboxExpiryMs(c.env, Boolean(owner));
+  if (owner && !await c.env.ACCESS.getByName('user:' + owner).reserveMailbox(mailbox, expiresAtMs, positive(c.env.MAX_ACTIVE_MAILBOXES, 20))) return failure('MAILBOX_LIMIT', 'Active mailbox limit reached', 429);
+  await c.env.ACCESS.getByName('mailbox:' + mailbox).activateMailbox(expiresAtMs, true);
+  await getD1DB(c.env.DB).update(mailboxes).set({ expiresAt: new Date(expiresAtMs) }).where(eq(mailboxes.address, mailbox));
   return c.json({
     mailboxToken: await createMailboxToken(
       mailbox,
       c.env.MAILBOX_TOKEN_SECRET,
       Date.now(),
-      getMailboxTokenTtlSeconds(),
+      Math.floor(mailboxExpiryMs(c.env, Boolean(owner)) / 1000),
     ),
+    expiresAt: expiresAtMs,
   });
 });
 
@@ -405,7 +478,49 @@ api.post('/login', async c => {
   if (!address || !await c.env.ACCESS.getByName('mailbox:' + address).mailboxActive()) return failure('UNAUTHORIZED', 'Invalid or expired mailbox access token', 401);
   const owner = await c.env.ACCESS.getByName('mailbox:' + address).mailboxOwner();
   if (owner && (await c.env.ACCESS.getByName('user:' + owner).accessState()).banned) return failure('ACCOUNT_BANNED', 'Account is banned', 403);
-  return c.json({ address, mailboxToken: body.password });
+  const row = await c.env.DB.prepare('SELECT expires_at FROM mailboxes WHERE address=?').bind(address).first<{ expires_at: number }>();
+  return c.json({
+    address,
+    mailboxToken: body.password,
+    expiresAt: row?.expires_at ? row.expires_at * 1000 : undefined,
+    renewEnabled: mailboxRenewEnabled(c.env),
+  });
+});
+
+// 登录后把匿名邮箱认领到当前账号（凭邮箱自身令牌，不改动他人邮箱）。
+api.post('/mailbox/claim', async (c, next) => {
+  if (!authReady(c.env)) return failure('LOGIN_REQUIRED', 'Sign in to link a mailbox', 401);
+  if (c.req.header('Origin') !== new URL(c.env.BETTER_AUTH_URL).origin) return failure('FORBIDDEN', 'Invalid request origin', 403);
+  const session = await createAuth(c.env).api.getSession({ headers: c.req.raw.headers });
+  if (!session) return failure('LOGIN_REQUIRED', 'Sign in to link a mailbox', 401);
+  if ((await c.env.ACCESS.getByName('user:' + session.user.id).accessState()).banned) return failure('ACCOUNT_BANNED', 'Account is banned', 403);
+  c.set('senderId', session.user.id);
+  await next();
+}, async (c) => {
+  const body = await c.req.json<{ mailboxToken?: string }>();
+  if (!body.mailboxToken || !c.env.MAILBOX_TOKEN_SECRET) {
+    return failure('UNAUTHORIZED', 'Mailbox authorization is invalid or expired', 401);
+  }
+  const mailbox = await verifyMailboxToken(body.mailboxToken, c.env.MAILBOX_TOKEN_SECRET);
+  if (!mailbox || !isAllowedMailboxAddress(mailbox, c.env.EMAIL_DOMAIN)) {
+    return failure('UNAUTHORIZED', 'Mailbox authorization is invalid or expired', 401);
+  }
+  const ledger = c.env.ACCESS.getByName('mailbox:' + mailbox);
+  if (!await ledger.mailboxActive()) return failure('MAILBOX_EXPIRED', 'Mailbox has expired', 410);
+  const owner = await ledger.mailboxOwner();
+  const userId = c.get('senderId');
+  if (owner && owner !== userId) return failure('MAILBOX_OWNED', 'Mailbox belongs to another account', 409);
+  if (owner === userId) {
+    const row = await c.env.DB.prepare('SELECT expires_at FROM mailboxes WHERE address=?').bind(mailbox).first<{ expires_at: number }>();
+    return c.json({ success: true, claimed: false, address: mailbox, expiresAt: row?.expires_at ? row.expires_at * 1000 : undefined });
+  }
+  const expiresAtMs = Date.now() + mailboxExpiryMs(c.env, true);
+  if (!await c.env.ACCESS.getByName('user:' + userId).reserveMailbox(mailbox, expiresAtMs, positive(c.env.MAX_ACTIVE_MAILBOXES, 20))) {
+    return failure('MAILBOX_LIMIT', 'Active mailbox limit reached', 429);
+  }
+  await ledger.activateMailbox(expiresAtMs, true, userId);
+  await getD1DB(c.env.DB).update(mailboxes).set({ userId, expiresAt: new Date(expiresAtMs) }).where(eq(mailboxes.address, mailbox));
+  return c.json({ success: true, claimed: true, address: mailbox, expiresAt: expiresAtMs });
 });
 
 // 前端配置接口
@@ -437,6 +552,11 @@ app.get('/config', (c) => {
     enabledSenders,
     sendChannel: sendChannel || '',
     senderEmail: sendChannel ? c.env.SENDER_EMAIL : '',
+    mailboxExpiryHours: mailboxExpiryHours(c.env, false),
+    userMailboxExpiryHours: mailboxExpiryHours(c.env, true),
+    mailboxRenewEnabled: mailboxRenewEnabled(c.env),
+    mailboxNameLength: mailboxNameMaxLength(c.env),
+    mailboxRandomLength: mailboxRandomLength(c.env),
   });
 });
 

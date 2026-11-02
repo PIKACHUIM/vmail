@@ -9,6 +9,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import { accountRequest, useAccount } from "../components/Account";
+import { useSenderModal } from "../components/sender";
 import { useConfig } from "../hooks/useConfig";
 import { Icon } from "./Icon";
 type Box = {
@@ -110,7 +111,45 @@ function Empty({
     </div>
   );
 }
-function BoxTable({ boxes }: { boxes: Box[] }) {
+// 用账号身份换取邮箱令牌，复用首页的发件弹窗
+function useMailboxSender() {
+  const zh = useZh();
+  const [target, setTarget] = useState<{ address: string; token: string } | null>(
+    null,
+  );
+  const [error, setError] = useState("");
+  const { SenderModal, setShowSenderModal } = useSenderModal(
+    target?.address ?? "",
+    target?.token ?? "",
+  );
+  const open = async (id: string) => {
+    setError("");
+    try {
+      const data = await accountRequest<{ address: string; mailboxToken: string }>(
+        "/mailboxes/" + encodeURIComponent(id) + "/token",
+        { method: "POST" },
+      );
+      setTarget({ address: data.address, token: data.mailboxToken });
+      setShowSenderModal(true);
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : zh
+            ? "无法打开发件窗口"
+            : "Unable to open the composer",
+      );
+    }
+  };
+  return { open, error, SenderModal };
+}
+function BoxTable({
+  boxes,
+  onSend,
+}: {
+  boxes: Box[];
+  onSend?: (box: Box) => void;
+}) {
   const zh = useZh();
   return (
     <div className="dash-table-wrap">
@@ -148,13 +187,25 @@ function BoxTable({ boxes }: { boxes: Box[] }) {
               </td>
               <td>
                 {b.expires_at * 1000 > Date.now() && (
-                  <Link
-                    to={
-                      "/dashboard/messages?mailbox=" + encodeURIComponent(b.id)
-                    }
-                  >
-                    {zh ? "查看邮件" : "Open inbox"} →
-                  </Link>
+                  <span className="dash-row-actions">
+                    <Link
+                      to={
+                        "/dashboard/messages?mailbox=" +
+                        encodeURIComponent(b.id)
+                      }
+                    >
+                      {zh ? "查看邮件" : "Open inbox"} →
+                    </Link>
+                    {onSend && (
+                      <button
+                        type="button"
+                        className="dash-secondary"
+                        onClick={() => onSend(b)}
+                      >
+                        {zh ? "发信" : "Send"}
+                      </button>
+                    )}
+                  </span>
                 )}
               </td>
             </tr>
@@ -469,9 +520,11 @@ export function MailboxesPage() {
     [cursor, setCursor] = useState(""),
     q = useBoxes(cursor),
     config = useConfig(),
-    client = useQueryClient();
+    client = useQueryClient(),
+    sender = useMailboxSender();
   const [creating, setCreating] = useState(false),
     [domain, setDomain] = useState(config.emailDomain[0] ?? ""),
+    [name, setName] = useState(""),
     [token, setToken] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -483,7 +536,7 @@ export function MailboxesPage() {
       const r = await fetch("/api/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain, token }),
+        body: JSON.stringify({ domain, token, name: name.trim() || undefined }),
       });
       const d = await r.json();
       if (!r.ok || !d.success)
@@ -492,6 +545,7 @@ export function MailboxesPage() {
         );
       setCursor("");
       setCreating(false);
+      setName("");
       await client.invalidateQueries({ queryKey: ["mailboxes"] });
       await client.invalidateQueries({ queryKey: ["overview"] });
     } catch (e) {
@@ -504,6 +558,7 @@ export function MailboxesPage() {
   }
   return (
     <>
+      {sender.SenderModal}
       <PageTitle
         title={zh ? "我的邮箱" : "Mailboxes"}
         description={
@@ -528,6 +583,25 @@ export function MailboxesPage() {
               ? "系统随机生成地址，与账号共享每日创建额度。"
               : "A random address is generated and counts toward your daily mailbox quota."}
           </p>
+          {config.mailboxNameLength > 0 && (
+            <div className="mail-toolbar">
+              <label htmlFor="mail-name">
+                {zh ? "自定义地址（可选）" : "Custom address (optional)"}
+              </label>
+              <input
+                id="mail-name"
+                className="dash-input"
+                value={name}
+                maxLength={config.mailboxNameLength}
+                placeholder={zh ? "留空则随机生成" : "Random if empty"}
+                onChange={(e) =>
+                  setName(
+                    e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ""),
+                  )
+                }
+              />
+            </div>
+          )}
           <div className="mail-toolbar">
             <label htmlFor="mail-domain">{zh ? "域名" : "Domain"}</label>
             <select
@@ -573,8 +647,16 @@ export function MailboxesPage() {
       )}
       <section className="dash-panel">
         <QueryState loading={q.isLoading} error={q.error} />
+        {sender.error && (
+          <p role="alert" className="dash-error">
+            {sender.error}
+          </p>
+        )}
         {q.data?.mailboxes.length ? (
-          <BoxTable boxes={q.data.mailboxes} />
+          <BoxTable
+            boxes={q.data.mailboxes}
+            onSend={(box) => void sender.open(box.id)}
+          />
         ) : (
           q.data && (
             <Empty
@@ -615,7 +697,8 @@ export function MessagesPage() {
     [search, setSearch] = useSearchParams(),
     box = search.get("mailbox") ?? "",
     cursor = search.get("cursor") ?? "",
-    boxes = useBoxes();
+    boxes = useBoxes(),
+    sender = useMailboxSender();
   const { data: a } = useAccount();
   const q = useQuery({
     queryKey: ["messages", a?.id, box, cursor],
@@ -636,6 +719,7 @@ export function MessagesPage() {
   });
   return (
     <>
+      {sender.SenderModal}
       <PageTitle
         title={zh ? "邮件" : "Messages"}
         description={
@@ -672,6 +756,14 @@ export function MessagesPage() {
         {box && (
           <button
             className="dash-secondary"
+            onClick={() => void sender.open(box)}
+          >
+            {zh ? "发信" : "Send email"}
+          </button>
+        )}
+        {box && (
+          <button
+            className="dash-secondary"
             disabled={q.isFetching}
             onClick={() => void q.refetch()}
           >
@@ -679,6 +771,11 @@ export function MessagesPage() {
           </button>
         )}
       </div>
+      {sender.error && (
+        <p role="alert" className="dash-error">
+          {sender.error}
+        </p>
+      )}
       <QueryState error={boxes.error} />
       <section className="dash-panel">
         {!box ? (

@@ -13,6 +13,7 @@ import {
   deleteMailboxMessage,
 } from "./database/dao";
 import { MAX_API_KEYS, positive } from "./limits";
+import { createMailboxToken } from "./sender";
 function effectiveUser<
   T extends { email: string; role: string; email_verified?: number },
 >(row: T, env: Env): T {
@@ -132,6 +133,31 @@ routes.use("/mailboxes/:id/*", async (c, next) => {
   if (!box) return failure("NOT_FOUND", "Mailbox not found or expired", 404);
   c.set("ownedAddress", box.address);
   await next();
+});
+routes.post("/mailboxes/:id/token", async (c) => {
+  if (!c.env.MAILBOX_TOKEN_SECRET)
+    return failure("SEND_UNAVAILABLE", "Sending is not configured", 503);
+  const row = await c.env.DB.prepare(
+    "SELECT address, expires_at FROM mailboxes WHERE id=? AND user_id=?",
+  )
+    .bind(c.req.param("id"), c.get("account").id)
+    .first<{ address: string; expires_at: number }>();
+  if (!row) return failure("NOT_FOUND", "Mailbox not found", 404);
+  const address = row.address;
+  if (!(await c.env.ACCESS.getByName("mailbox:" + address).mailboxActive()))
+    return failure("NOT_FOUND", "Mailbox expired", 404);
+  const remaining = Math.floor(row.expires_at - Date.now() / 1000);
+  if (remaining <= 0) return failure("NOT_FOUND", "Mailbox expired", 404);
+  return c.json({
+    address,
+    expiresAt: row.expires_at * 1000,
+    mailboxToken: await createMailboxToken(
+      address,
+      c.env.MAILBOX_TOKEN_SECRET,
+      Date.now(),
+      Math.max(60, remaining),
+    ),
+  });
 });
 routes.get("/mailboxes/:id/messages", async (c) => {
   try {

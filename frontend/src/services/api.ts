@@ -47,16 +47,21 @@ export interface MailboxAuthorizationResponse {
   bypassed?: boolean;
   mailbox: string;
   mailboxToken?: string;
+  expiresAt?: number;
+  renewEnabled?: boolean;
 }
 
 export async function verifyTurnstile(
   domain: string,
   token?: string,
+  name?: string,
 ): Promise<MailboxAuthorizationResponse> {
   const response = await fetch(`${API_BASE_URL}/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + (Cookies.get("mailboxToken") ?? "") },
-    body: JSON.stringify(token ? { token, domain } : { domain }),
+    body: JSON.stringify(
+      name ? { token, domain, name } : token ? { token, domain } : { domain },
+    ),
   });
   if (!response.ok) {
     const errorData = await response.json();
@@ -94,6 +99,8 @@ export async function deleteEmails(ids: string[]): Promise<{ count: number }> {
 export async function loginByPassword(password: string): Promise<{
   address: string;
   mailboxToken?: string;
+  expiresAt?: number;
+  renewEnabled?: boolean;
 }> {
   const response = await fetch(`${API_BASE_URL}/login`, {
     method: "POST",
@@ -109,7 +116,7 @@ export async function loginByPassword(password: string): Promise<{
 
 export async function refreshMailboxToken(
   mailboxToken: string,
-): Promise<string> {
+): Promise<{ mailboxToken: string; expiresAt?: number }> {
   const response = await fetch(`${API_BASE_URL}/mailbox-token/refresh`, {
     method: "POST",
     headers: { Authorization: `Bearer ${mailboxToken}` },
@@ -120,8 +127,29 @@ export async function refreshMailboxToken(
       errorData.message || "Failed to refresh mailbox authorization",
     );
   }
-  const data = (await response.json()) as { mailboxToken: string };
-  return data.mailboxToken;
+  const data = (await response.json()) as {
+    mailboxToken: string;
+    expiresAt?: number;
+  };
+  return data;
+}
+
+// 登录后把匿名邮箱认领到当前账号
+export async function claimMailbox(
+  mailboxToken: string,
+): Promise<{ claimed: boolean; address: string; expiresAt?: number }> {
+  const response = await fetch(`${API_BASE_URL}/mailbox/claim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mailboxToken }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      data.error?.message ?? data.message ?? "Unable to link mailbox",
+    );
+  }
+  return data;
 }
 
 // 站点统计数据类型

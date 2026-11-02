@@ -39,12 +39,12 @@ export function DashboardLayout() {
     client = useQueryClient();
   useEffect(() => setOpen(false), [location.pathname]);
   const workspace = [
-    ["/dashboard", "grid", "概览", "Overview"],
-    ["/dashboard/keys", "key", "API Key", "API keys"],
+    ["/dashboard", "grid", "系统概览", "Overview"],
     ["/dashboard/mailboxes", "inbox", "我的邮箱", "Mailboxes"],
-    ["/dashboard/messages", "mail", "邮件", "Messages"],
+    ["/dashboard/messages", "mail", "邮件管理", "Messages"],
     ["/dashboard/outbound", "mail", "发件记录", "Sent mail"],
     ["/dashboard/account", "user", "账户信息", "Account"],
+    ["/dashboard/keys", "key", "接口管理", "API keys"],
   ];
   const admin = [
     ["/dashboard/admin/users", "users", "用户管理", "Users"],
@@ -199,6 +199,10 @@ export function DashboardLayout() {
             <strong>{active}</strong>
           </div>
           <div className="topbar-actions">
+            <Link className="dash-secondary dash-home-link" to="/">
+              <Icon name="inbox" size={16} />
+              <span>{zh ? "返回主页" : "Home"}</span>
+            </Link>
             <button
               className="dash-icon-button"
               onClick={toggleTheme}

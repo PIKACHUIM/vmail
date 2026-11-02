@@ -151,5 +151,12 @@
   "LOGIN_REQUIRED": "Sign in to send email",
   "SEND_QUOTA_EXCEEDED": "Sending quota or rate limit reached. Please try later.",
   "SEND_GLOBAL_QUOTA_EXCEEDED": "Daily site sending quota reached. Please try tomorrow.",
-  "Sign in": "Sign in"
+  "Sign in": "Sign in",
+  "Your mailboxes": "Your mailboxes",
+  "Select a mailbox": "Select a mailbox",
+  "Expired": "Expired",
+  "Remove": "Remove",
+  "Mailbox linked to your account": "Mailbox linked to your account",
+  "Custom address (optional)": "Custom address (optional)",
+  "Random if empty": "Random if empty"
 }

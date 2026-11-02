@@ -7,6 +7,7 @@ import RefreshIcon from './icons/RefreshIcon'; // 导入刷新图标
 interface CountdownTimerProps {
   expiryTimestamp: number; // 过期时间戳 (毫秒)
   onReset: () => void; // 修改：回调函数名称从 onExtend 改为 onReset
+  canRenew?: boolean; // 是否允许延长有效期
 }
 
 // 格式化时间单位，确保总是显示两位数
@@ -15,7 +16,7 @@ const formatTimeUnit = (unit: number): string => {
 };
 
 // 修改：组件名称和 prop 名称修改
-export function CountdownTimer({ expiryTimestamp, onReset }: CountdownTimerProps) {
+export function CountdownTimer({ expiryTimestamp, onReset, canRenew = true }: CountdownTimerProps) {
   const { t } = useTranslation(); // 用于国际化
 
   // 计算剩余时间的函数 (使用 useCallback 避免不必要的重新创建)
@@ -86,8 +87,8 @@ export function CountdownTimer({ expiryTimestamp, onReset }: CountdownTimerProps
           </span> // 显示剩余时间 时:分:秒
         )}
       </div>
-      {/* feat: 添加重置有效期按钮, 仅在未过期时显示 */}
-      {!timeLeft.expired && (
+      {/* feat: 添加重置有效期按钮, 仅在未过期且允许延期时显示 */}
+      {canRenew && !timeLeft.expired && (
         <button
           onClick={onReset} // 修改：调用 onReset 回调
           className="p-1 rounded text-cyan-400 hover:text-cyan-300 focus:outline-none focus:ring-1 focus:ring-cyan-500"
