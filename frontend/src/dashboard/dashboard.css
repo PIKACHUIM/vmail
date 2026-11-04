@@ -1035,3 +1035,6 @@
 .dash-home-link{text-decoration:none}
 .dash-row-actions{display:inline-flex;align-items:center;gap:10px}
 .dash-row-actions .dash-secondary{padding:4px 10px;font-size:11px}
+.dash-theme-toggle{padding:6px 12px;font-size:11px;gap:6px}
+.dash-sidebar>.dash-home-link{margin:0 0 14px}
+@media (max-width: 1024px){.dash-theme-toggle span{display:none}}

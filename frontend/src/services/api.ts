@@ -41,6 +41,25 @@ export async function getMailboxMeta(address: string): Promise<MailboxMeta> {
   return response.json();
 }
 
+// 读取当前邮箱的有效期与延期开关（用于刷新页面后恢复倒计时）
+export interface MailboxInfo {
+  address: string;
+  expiresAt?: number;
+  renewEnabled: boolean;
+}
+
+export async function getMailboxInfo(
+  mailboxToken: string,
+): Promise<MailboxInfo> {
+  const response = await fetch(`${API_BASE_URL}/mailbox/info`, {
+    headers: { Authorization: "Bearer " + mailboxToken },
+  });
+  if (!response.ok) {
+    throw new Error("Failed to fetch mailbox info");
+  }
+  return response.json();
+}
+
 // feat: 新增函数，用于在创建邮箱前验证人机校验token
 export interface MailboxAuthorizationResponse {
   success: boolean;

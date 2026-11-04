@@ -16,6 +16,7 @@ import {
   getEmails,
   getEmailById,
   getMailboxMeta,
+  getMailboxInfo,
   deleteEmails,
   loginByPassword,
   refreshMailboxToken,
@@ -87,6 +88,29 @@ export function Home() {
     },
   );
   const [turnstileToken, setTurnstileToken] = useState<string>("");
+  // 服务端返回的延期开关，避免仅靠前端配置判断
+  const [renewAllowed, setRenewAllowed] = useState(true);
+  // 刷新页面后从服务端补回有效期，保证倒计时和延期按钮始终可见
+  useEffect(() => {
+    if (!address || !mailboxToken) return;
+    let cancelled = false;
+    getMailboxInfo(mailboxToken)
+      .then((info) => {
+        if (cancelled) return;
+        setRenewAllowed(info.renewEnabled);
+        if (!info.expiresAt) return;
+        setExpiryTimestamp(info.expiresAt);
+        Cookies.set("emailExpiry", String(info.expiresAt), {
+          expires: new Date(info.expiresAt),
+        });
+      })
+      .catch(() => {
+        // 令牌失效时保持原状，交给登录/重建流程处理
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address, mailboxToken]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null); // 新增状态，用于存储当前选中的邮件
   const [selectedDomain, setSelectedDomain] = useState<string>(
@@ -813,7 +837,7 @@ export function Home() {
               <CountdownTimer
                 expiryTimestamp={expiryTimestamp}
                 onReset={handleResetExpiry}
-                canRenew={config.mailboxRenewEnabled}
+                canRenew={config.mailboxRenewEnabled && renewAllowed}
               />
             )}
             <button

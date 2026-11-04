@@ -523,6 +523,19 @@ api.post('/mailbox/claim', async (c, next) => {
   return c.json({ success: true, claimed: true, address: mailbox, expiresAt: expiresAtMs });
 });
 
+// 读取当前邮箱的有效期与延期开关，供前端恢复倒计时/延期按钮。
+api.get('/mailbox/info', mailboxAuth, async (c) => {
+  const mailbox = c.get('mailbox');
+  const row = await c.env.DB.prepare('SELECT expires_at FROM mailboxes WHERE address=?')
+    .bind(mailbox)
+    .first<{ expires_at: number }>();
+  return c.json({
+    address: mailbox,
+    expiresAt: row?.expires_at ? row.expires_at * 1000 : undefined,
+    renewEnabled: mailboxRenewEnabled(c.env),
+  });
+});
+
 // 前端配置接口
 app.get('/config', (c) => {
   // feat: 将 emailDomain 拆分为数组以支持多域名

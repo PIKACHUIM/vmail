@@ -558,7 +558,7 @@ export function MailboxesPage() {
   }
   return (
     <>
-      {sender.SenderModal}
+      <sender.SenderModal />
       <PageTitle
         title={zh ? "我的邮箱" : "Mailboxes"}
         description={
@@ -719,7 +719,7 @@ export function MessagesPage() {
   });
   return (
     <>
-      {sender.SenderModal}
+      <sender.SenderModal />
       <PageTitle
         title={zh ? "邮件" : "Messages"}
         description={

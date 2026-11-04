@@ -148,6 +148,10 @@ export function DashboardLayout() {
         >
           <Icon name="close" />
         </button>
+        <Link className="dash-link dash-home-link" to="/">
+          <Icon name="inbox" />
+          <span>{zh ? "返回主页" : "Back to home"}</span>
+        </Link>
         <p className="nav-label">{zh ? "工作空间" : "WORKSPACE"}</p>
         <nav aria-label={zh ? "工作空间导航" : "Workspace navigation"}>
           {links(workspace)}
@@ -204,7 +208,7 @@ export function DashboardLayout() {
               <span>{zh ? "返回主页" : "Home"}</span>
             </Link>
             <button
-              className="dash-icon-button"
+              className="dash-secondary dash-theme-toggle"
               onClick={toggleTheme}
               aria-label={
                 theme === "dark"
@@ -225,7 +229,10 @@ export function DashboardLayout() {
                     : "Switch to dark theme"
               }
             >
-              <Icon name={theme === "dark" ? "sun" : "moon"} size={18} />
+              <Icon name={theme === "dark" ? "sun" : "moon"} size={16} />
+              <span>
+                {theme === "dark" ? (zh ? "浅色" : "Light") : zh ? "深色" : "Dark"}
+              </span>
             </button>
             <span className="service-status">
               <i />
